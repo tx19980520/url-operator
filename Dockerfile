@@ -1,5 +1,5 @@
 FROM golang:latest as builder
-RUN go build -a url-operator
+RUN go build
 FROM alpine:latest as prod
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
