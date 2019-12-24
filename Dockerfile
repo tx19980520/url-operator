@@ -1,4 +1,4 @@
-FROM golang:latest as builder
+FROM registry.cn-shanghai.aliyuncs.com/veia/devgo as builder
 RUN go build
 FROM alpine:latest as prod
 RUN apk --no-cache add ca-certificates
