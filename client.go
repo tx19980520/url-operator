@@ -57,6 +57,9 @@ func (p *Proxy) ScaleUp() error {
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta:metav1.ObjectMeta{
 					Name: "nginx",
+					Labels: map[string]string {
+						"name": "test",
+					},
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
@@ -75,6 +78,7 @@ func (p *Proxy) ScaleUp() error {
 			},
 		},
 	}
+	*deploySpec.Spec.Replicas = 1;
 	deploySpec, err := p.clientset.AppsV1().Deployments(namespace).Create(deploySpec)
 	if err != nil {
 		return err
