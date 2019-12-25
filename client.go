@@ -19,7 +19,7 @@ type Proxy struct {
 
 // Operator interface init
 type Operator interface {
-	ScaleUp() error
+	ScaleUp(index string) error
 }
 
 // NewProxy for default init function
@@ -38,60 +38,93 @@ func NewProxy() *Proxy {
 }
 
 // ScaleUp for interface
-func (p *Proxy) ScaleUp() error {
+func (p *Proxy) ScaleUp(index string) error {
 	namespace := os.Getenv("NAME_SPACE")
-	deploySpec := &v1.Deployment{
+	version := os.Getenv("VERSION")
+	// create statefulset
+	labels := map[string]string {
+		"name": "test",
+		"shard": index,
+	}
+	statefulSpec := &v1.StatefulSet{
 		TypeMeta: metav1.TypeMeta{
 
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "tx-test",
 		},
-		Spec: v1.DeploymentSpec{
+		Spec: v1.StatefulSetSpec{
 			Replicas: new(int32),
 			Selector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"name": "test",
-				},
+				MatchLabels: labels,
 			},
+			ServiceName: "url-" + index,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta:metav1.ObjectMeta{
 					Name: "nginx",
-					Labels: map[string]string {
-						"name": "test",
-					},
+					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						corev1.Container{
-							Name: "nginx",
-							Image: "nginx",
+							Name: "url-operator",
+							Image: "registry.cn-shanghai.aliyuncs.com/se-devgo/url-operator:" + version,
 							Ports: []corev1.ContainerPort{
 								corev1.ContainerPort{
 									Name: "http",
-									ContainerPort: 80,
+									ContainerPort: 9090,
 								},
 							},
 						},
 					},
+					ImagePullSecrets: []corev1.LocalObjectReference{
+						corev1.LocalObjectReference{
+							Name: "aliyun",
+						},
+					}, 
 				},
 			},
 		},
 	}
-	*deploySpec.Spec.Replicas = 1;
-	deploySpec, err := p.clientset.AppsV1().Deployments(namespace).Create(deploySpec)
+	*statefulSpec.Spec.Replicas = 1;
+	serviceSpec := &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+
+		},
+		ObjectMeta:metav1.ObjectMeta{
+			Name: "url",
+			Labels: labels,
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				corev1.ServicePort{
+					Name: "url",
+					Port: 9090, 
+				},
+			},
+			Selector: labels,
+		},
+	}
+	p.clientset.CoreV1().Services(namespace).Create(serviceSpec)
+	statefulSpec, err := p.clientset.AppsV1().StatefulSets(namespace).Create(statefulSpec)
 	if err != nil {
 		return err
 	}
+	// create service
 	return nil	
 }
 
 // ScaleUp for http server
-func ScaleUp(response http.ResponseWriter, Request *http.Request) {
+func ScaleUp(response http.ResponseWriter, request *http.Request) {
 	var operator Operator;
 	proxy := NewProxy()
 	operator = proxy
-	err := operator.ScaleUp()
+	_ = request.ParseForm()
+	index := request.FormValue("index")
+	if (index == "") {
+		http.Error(response, "index parameter must have", http.StatusBadRequest)
+	}
+	err := operator.ScaleUp(index)
 	if (err != nil) {
 		http.Error(response, err.Error(), http.StatusInternalServerError)	
 	} else {
