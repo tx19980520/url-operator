@@ -3,10 +3,12 @@ package main
 import (
 	"log"
 	"os"
+	"io/ioutil"
 	"net/http"
 	v1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/kubernetes"
 
@@ -41,72 +43,84 @@ func NewProxy() *Proxy {
 func (p *Proxy) ScaleUp(index string) error {
 	namespace := os.Getenv("NAME_SPACE")
 	version := os.Getenv("VERSION")
-	// create statefulset
-	configName := "backend"
+	configMapName := "config-"+ index
+	deploymentName := "url-"+ index
+	mysqlName := "mysql-" + index
+	mysqlServiceName := mysqlName
+	serviceName := deploymentName
 	labels := map[string]string {
-		"name": "test",
+		"name": "url",
 		"shard": index,
 	}
-	statefulSpec := &v1.StatefulSet{
-		TypeMeta: metav1.TypeMeta{
-
-		},
+	// create configmap
+	configmap := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "url-" + index,
+			Name: configMapName,
 		},
-		Spec: v1.StatefulSetSpec{
-			Replicas: new(int32),
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			ServiceName: "url-" + index,
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta:metav1.ObjectMeta{
-					Name: "url",
-					Labels: labels,
-				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
-						corev1.Container{
-							Name: "url-operator",
-							Image: "ty0207/link-server:v"+version,
-							Ports: []corev1.ContainerPort{
-								corev1.ContainerPort{
-									Name: "http",
-									ContainerPort: 9090,
-								},
-							},
-							VolumeMounts: []corev1.VolumeMount{
-								corev1.VolumeMount{
-									Name: configName,
-									MountPath: "/root/config",
-								},
-							},
-						},
-					}, 
-					Volumes: []corev1.Volume{
-						corev1.Volume{
-							Name: configName,
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: configName,
-									},
-								},
-							},
-						},
+		Data: map[string]string {
+			"config.yml": "mysql:\n" +
+			"\tipport: mysql-"+ index +".default:3306\n" +
+			"\tusername: root\n" + 
+			"\tpassword:\n" + 
+		    "redis:\n" +
+			"\tipport: localhost:6379",
+		},
+	}
+	configmap, err := p.clientset.CoreV1().ConfigMaps(namespace).Create(configmap)
+	if err != nil {
+		return err
+	}
+	// create deployment from yaml
+	file,err := os.Open("/config/url-redis.yaml")
+	if err != nil {
+		return err
+	}
+	bytes, err := ioutil.ReadAll(file)
+	deployment := &v1.Deployment{};
+	yaml.NewYAMLOrJSONDecoder(file,len(bytes)).Decode(&deployment)
+	deployment.ObjectMeta.Name = deploymentName
+	deployment.Spec.Selector.MatchLabels = labels
+	deployment.Spec.Template.Spec.Volumes = []corev1.Volume {
+		corev1.Volume{
+			Name: configMapName,
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource {
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: configMapName,
 					},
 				},
 			},
 		},
 	}
+	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{
+		corev1.VolumeMount{
+			Name: configMapName,
+			MountPath: "/root/config",
+		},
+	}
+	deployment.Spec.Template.Spec.Containers[0].Image = "ty0207/link-server:v"+ version 
+	// create statefulset
+	statefulSpec := &v1.StatefulSet{}
+	statefulfile,err := os.Open("/config/mysql.yaml")
+	if err != nil {
+		return err
+	}
+	statefulbytes, err := ioutil.ReadAll(statefulfile)
+	yaml.NewYAMLOrJSONDecoder(statefulfile,len(statefulbytes)).Decode(statefulSpec)
 	*statefulSpec.Spec.Replicas = 1;
+	statefulSpec.ObjectMeta.Name = mysqlName
+	statefulSpec.Spec.ServiceName = mysqlServiceName
+	mysqlLabels := map[string]string {
+		"name": "mysql",
+		"shard": index,
+	}
+	statefulSpec.Spec.Selector.MatchLabels = mysqlLabels
 	serviceSpec := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
 
 		},
 		ObjectMeta:metav1.ObjectMeta{
-			Name: "url-" + index,
+			Name: serviceName,
 			Labels: labels,
 		},
 		Spec: corev1.ServiceSpec{
@@ -119,8 +133,38 @@ func (p *Proxy) ScaleUp(index string) error {
 			Selector: labels,
 		},
 	}
-	p.clientset.CoreV1().Services(namespace).Create(serviceSpec)
-	statefulSpec, err := p.clientset.AppsV1().StatefulSets(namespace).Create(statefulSpec)
+	mysqlserviceSpec := &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+
+		},
+		ObjectMeta:metav1.ObjectMeta{
+			Name: deploymentName,
+			Labels: labels,
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				corev1.ServicePort{
+					Name: "mysql",
+					Port: 3306, 
+				},
+			},
+			Selector: labels,
+		},
+	}
+	deployment, err = p.clientset.AppsV1().Deployments(namespace).Create(deployment)
+	if err != nil {
+		return err
+	}
+	serviceSpec, err = p.clientset.CoreV1().Services(namespace).Create(serviceSpec)
+	if err != nil {
+		return err
+	}
+	// create service
+	mysqlserviceSpec,err = p.clientset.CoreV1().Services(namespace).Create(mysqlserviceSpec)
+	if err != nil {
+		return err
+	}
+	statefulSpec, err = p.clientset.AppsV1().StatefulSets(namespace).Create(statefulSpec)
 	if err != nil {
 		return err
 	}
