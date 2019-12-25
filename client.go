@@ -79,7 +79,9 @@ func (p *Proxy) ScaleUp(index string) error {
 	deployment := &v1.Deployment{};
 	yaml.NewYAMLOrJSONDecoder(file,len(bytes)).Decode(&deployment)
 	deployment.ObjectMeta.Name = deploymentName
-	deployment.Spec.Selector.MatchLabels = labels
+	*deployment.Spec.Selector = metav1.LabelSelector {
+		MatchLabels: labels,
+	}
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume {
 		corev1.Volume{
 			Name: configMapName,
@@ -114,7 +116,9 @@ func (p *Proxy) ScaleUp(index string) error {
 		"name": "mysql",
 		"shard": index,
 	}
-	statefulSpec.Spec.Selector.MatchLabels = mysqlLabels
+	*statefulSpec.Spec.Selector = metav1.LabelSelector{
+		MatchLabels: mysqlLabels,
+	}
 	serviceSpec := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
 
