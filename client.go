@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"log"
+	"bytes"
 	"os"
 	"io/ioutil"
 	"net/http"
@@ -29,11 +29,11 @@ type Operator interface {
 func NewProxy() *Proxy {
 	config, err := rest.InClusterConfig()
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 	return &Proxy {
 		clientset: clientset,
@@ -60,35 +60,41 @@ func (p *Proxy) ScaleUp(index string) error {
 		},
 		Data: map[string]string {
 			"config.yml": "mysql:\n" +
-			"\tipport: mysql-"+ index +".default:3306\n" +
-			"\tusername: root\n" + 
-			"\tpassword:\n" + 
+			"  ipport: mysql-"+ index +".default:3306\n" +
+			"  username: root\n" + 
+			"  password:\n" + 
 		    "redis:\n" +
-			"\tipport: localhost:6379",
+			"  ipport: localhost:6379",
 		},
 	}
+	fmt.Println("configmap")
 	configmap, err := p.clientset.CoreV1().ConfigMaps(namespace).Create(configmap)
 	if err != nil {
-		fmt.Printf("configmap")
+		fmt.Println("configmap")
 		return err
 	}
 	// create deployment from yaml
-	file,err := os.Open("/config/url-redis.yaml")
+	urlbytes,err := ioutil.ReadFile("/config/url-redis.yaml")
 	if err != nil {
-		fmt.Printf("/config/url-redis.yaml")
+		fmt.Println("/config/url-redis.yaml")
 		return err
 	}
-	bytes, err := ioutil.ReadAll(file)
-	deployment := &v1.Deployment{};
-	err = yaml.NewYAMLOrJSONDecoder(file,len(bytes)).Decode(&deployment)
 	if err != nil {
-		fmt.Printf("yaml decoder deployment")
+		fmt.Println("ioutil url-redis")
+		return err
+	}
+	deployment := &v1.Deployment{}
+	fmt.Println("deployment")
+	err = yaml.NewYAMLOrJSONDecoder(bytes.NewReader(urlbytes),len(urlbytes)).Decode(&deployment)
+	if err != nil {
+		fmt.Println("yaml decoder deployment")
 		return err
 	}
 	deployment.ObjectMeta.Name = deploymentName
 	deployment.Spec.Selector = &metav1.LabelSelector {
 		MatchLabels: labels,
 	}
+	deployment.Spec.Template.ObjectMeta.Labels = labels
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume {
 		corev1.Volume{
 			Name: configMapName,
@@ -104,26 +110,30 @@ func (p *Proxy) ScaleUp(index string) error {
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{
 		corev1.VolumeMount{
 			Name: configMapName,
-			MountPath: "/root/config",
+			MountPath: "/go/src/main/config",
 		},
 	}
 	deployment.Spec.Template.Spec.Containers[0].Image = "ty0207/link-server:v"+ version 
 	// create statefulset
+	fmt.Println("containers")
 	statefulSpec := &v1.StatefulSet{}
-	statefulfile,err := os.Open("/config/mysql.yaml")
+	statefulfile,err := ioutil.ReadFile("/config/mysql.yaml")
 	if err != nil {
-		fmt.Printf("/config/mysql.yaml")
+		fmt.Println("/config/mysql.yaml")
 		return err
 	}
-	statefulbytes, err := ioutil.ReadAll(statefulfile)
-	err = yaml.NewYAMLOrJSONDecoder(statefulfile,len(statefulbytes)).Decode(statefulSpec)
+	fmt.Println("mysql")
+	err = yaml.NewYAMLOrJSONDecoder(bytes.NewBuffer(statefulfile),len(statefulfile)).Decode(statefulSpec)
+	fmt.Println("statefulSpec")
 	if err != nil {
-		fmt.Printf("yaml decoder mysql")
+		fmt.Println("yaml decoder mysql")
 		return err
 	}
 	statefulSpec.Spec.Replicas = new (int32)
 	*statefulSpec.Spec.Replicas = 1
 	statefulSpec.ObjectMeta.Name = mysqlName
+	
+	fmt.Println("configmap")
 	statefulSpec.Spec.ServiceName = mysqlServiceName
 	mysqlLabels := map[string]string {
 		"name": "mysql",
@@ -132,11 +142,12 @@ func (p *Proxy) ScaleUp(index string) error {
 	statefulSpec.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: mysqlLabels,
 	}
+	statefulSpec.Spec.Template.ObjectMeta.Labels = mysqlLabels
 	serviceSpec := &corev1.Service{
 		TypeMeta: metav1.TypeMeta{
 
 		},
-		ObjectMeta:metav1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name: serviceName,
 			Labels: labels,
 		},
@@ -155,8 +166,8 @@ func (p *Proxy) ScaleUp(index string) error {
 
 		},
 		ObjectMeta:metav1.ObjectMeta{
-			Name: deploymentName,
-			Labels: labels,
+			Name: mysqlServiceName,
+			Labels: mysqlLabels,
 		},
 		Spec: corev1.ServiceSpec{
 			Ports: []corev1.ServicePort{
@@ -165,28 +176,32 @@ func (p *Proxy) ScaleUp(index string) error {
 					Port: 3306, 
 				},
 			},
-			Selector: labels,
+			Selector: mysqlLabels,
 		},
 	}
+	fmt.Println("deployment")
 	deployment, err = p.clientset.AppsV1().Deployments(namespace).Create(deployment)
 	if err != nil {
-		fmt.Printf("deployment create")
+		fmt.Println("deployment create")
 		return err
 	}
+	fmt.Println("serviceSpec")
 	serviceSpec, err = p.clientset.CoreV1().Services(namespace).Create(serviceSpec)
 	if err != nil {
-		fmt.Printf("service create")
+		fmt.Println("service create")
 		return err
 	}
 	// create service
+	fmt.Println("mysqlserviceSpec")
 	mysqlserviceSpec,err = p.clientset.CoreV1().Services(namespace).Create(mysqlserviceSpec)
 	if err != nil {
-		fmt.Printf("mysql service create")
+		fmt.Println("mysql service create")
 		return err
 	}
+	fmt.Println("statfulSpec")
 	statefulSpec, err = p.clientset.AppsV1().StatefulSets(namespace).Create(statefulSpec)
 	if err != nil {
-		fmt.Printf("statefulset create")
+		fmt.Println("statefulset create")
 		return err
 	}
 	// create service
