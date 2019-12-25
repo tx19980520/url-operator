@@ -52,7 +52,7 @@ func (p *Proxy) ScaleUp(index string) error {
 
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "url-" + version,
+			Name: "url-" + index,
 		},
 		Spec: v1.StatefulSetSpec{
 			Replicas: new(int32),
