@@ -42,6 +42,7 @@ func (p *Proxy) ScaleUp(index string) error {
 	namespace := os.Getenv("NAME_SPACE")
 	version := os.Getenv("VERSION")
 	// create statefulset
+	configName := "backend"
 	labels := map[string]string {
 		"name": "test",
 		"shard": index,
@@ -61,27 +62,40 @@ func (p *Proxy) ScaleUp(index string) error {
 			ServiceName: "url-" + index,
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta:metav1.ObjectMeta{
-					Name: "nginx",
+					Name: "url",
 					Labels: labels,
 				},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						corev1.Container{
 							Name: "url-operator",
-							Image: "registry.cn-shanghai.aliyuncs.com/se-devgo/url-operator:" + version,
+							Image: "ty0207/link-server:v"+version,
 							Ports: []corev1.ContainerPort{
 								corev1.ContainerPort{
 									Name: "http",
 									ContainerPort: 9090,
 								},
 							},
-						},
-					},
-					ImagePullSecrets: []corev1.LocalObjectReference{
-						corev1.LocalObjectReference{
-							Name: "aliyun",
+							VolumeMounts: []corev1.VolumeMount{
+								corev1.VolumeMount{
+									Name: configName,
+									MountPath: "/root/config",
+								},
+							},
 						},
 					}, 
+					Volumes: []corev1.Volume{
+						corev1.Volume{
+							Name: configName,
+							VolumeSource: corev1.VolumeSource{
+								ConfigMap: &corev1.ConfigMapVolumeSource{
+									LocalObjectReference: corev1.LocalObjectReference{
+										Name: configName,
+									},
+								},
+							},
+						},
+					},
 				},
 			},
 		},
