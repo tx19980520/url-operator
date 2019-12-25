@@ -43,7 +43,7 @@ func NewProxy() *Proxy {
 func (p *Proxy) ScaleUp(index string) error {
 	namespace := os.Getenv("NAME_SPACE")
 	version := os.Getenv("VERSION")
-	configMapName := "config-"+ index
+	configMapName := ":wq-"+ index
 	deploymentName := "url-"+ index
 	mysqlName := "mysql-" + index
 	mysqlServiceName := mysqlName
@@ -77,9 +77,12 @@ func (p *Proxy) ScaleUp(index string) error {
 	}
 	bytes, err := ioutil.ReadAll(file)
 	deployment := &v1.Deployment{};
-	yaml.NewYAMLOrJSONDecoder(file,len(bytes)).Decode(&deployment)
+	err = yaml.NewYAMLOrJSONDecoder(file,len(bytes)).Decode(&deployment)
+	if err != nil {
+		return err
+	}
 	deployment.ObjectMeta.Name = deploymentName
-	*deployment.Spec.Selector = metav1.LabelSelector {
+	deployment.Spec.Selector = &metav1.LabelSelector {
 		MatchLabels: labels,
 	}
 	deployment.Spec.Template.Spec.Volumes = []corev1.Volume {
@@ -108,15 +111,19 @@ func (p *Proxy) ScaleUp(index string) error {
 		return err
 	}
 	statefulbytes, err := ioutil.ReadAll(statefulfile)
-	yaml.NewYAMLOrJSONDecoder(statefulfile,len(statefulbytes)).Decode(statefulSpec)
-	*statefulSpec.Spec.Replicas = 1;
+	err = yaml.NewYAMLOrJSONDecoder(statefulfile,len(statefulbytes)).Decode(statefulSpec)
+	if err != nil {
+		return err
+	}
+	statefulSpec.Spec.Replicas = new (int32)
+	*statefulSpec.Spec.Replicas = 1
 	statefulSpec.ObjectMeta.Name = mysqlName
 	statefulSpec.Spec.ServiceName = mysqlServiceName
 	mysqlLabels := map[string]string {
 		"name": "mysql",
 		"shard": index,
 	}
-	*statefulSpec.Spec.Selector = metav1.LabelSelector{
+	statefulSpec.Spec.Selector = &metav1.LabelSelector{
 		MatchLabels: mysqlLabels,
 	}
 	serviceSpec := &corev1.Service{
