@@ -43,7 +43,7 @@ func NewProxy() *Proxy {
 func (p *Proxy) ScaleUp(index string) error {
 	namespace := os.Getenv("NAME_SPACE")
 	version := os.Getenv("VERSION")
-	configMapName := ":wq-"+ index
+	configMapName := "config-"+ index
 	deploymentName := "url-"+ index
 	mysqlName := "mysql-" + index
 	mysqlServiceName := mysqlName
