@@ -106,7 +106,7 @@ func (p *Proxy) ScaleUp(index string) error {
 
 		},
 		ObjectMeta:metav1.ObjectMeta{
-			Name: "url",
+			Name: "url-" + index,
 			Labels: labels,
 		},
 		Spec: corev1.ServiceSpec{
@@ -137,10 +137,12 @@ func ScaleUp(response http.ResponseWriter, request *http.Request) {
 	index := request.FormValue("index")
 	if (index == "") {
 		http.Error(response, "index parameter must have", http.StatusBadRequest)
+		return
 	}
 	err := operator.ScaleUp(index)
 	if (err != nil) {
-		http.Error(response, err.Error(), http.StatusInternalServerError)	
+		http.Error(response, err.Error(), http.StatusInternalServerError)
+		return
 	} else {
 		response.WriteHeader(http.StatusOK)
 	}
