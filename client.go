@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"io/ioutil"
@@ -68,17 +69,20 @@ func (p *Proxy) ScaleUp(index string) error {
 	}
 	configmap, err := p.clientset.CoreV1().ConfigMaps(namespace).Create(configmap)
 	if err != nil {
+		fmt.Printf("configmap")
 		return err
 	}
 	// create deployment from yaml
 	file,err := os.Open("/config/url-redis.yaml")
 	if err != nil {
+		fmt.Printf("/config/url-redis.yaml")
 		return err
 	}
 	bytes, err := ioutil.ReadAll(file)
 	deployment := &v1.Deployment{};
 	err = yaml.NewYAMLOrJSONDecoder(file,len(bytes)).Decode(&deployment)
 	if err != nil {
+		fmt.Printf("yaml decoder deployment")
 		return err
 	}
 	deployment.ObjectMeta.Name = deploymentName
@@ -108,11 +112,13 @@ func (p *Proxy) ScaleUp(index string) error {
 	statefulSpec := &v1.StatefulSet{}
 	statefulfile,err := os.Open("/config/mysql.yaml")
 	if err != nil {
+		fmt.Printf("/config/mysql.yaml")
 		return err
 	}
 	statefulbytes, err := ioutil.ReadAll(statefulfile)
 	err = yaml.NewYAMLOrJSONDecoder(statefulfile,len(statefulbytes)).Decode(statefulSpec)
 	if err != nil {
+		fmt.Printf("yaml decoder mysql")
 		return err
 	}
 	statefulSpec.Spec.Replicas = new (int32)
@@ -164,19 +170,23 @@ func (p *Proxy) ScaleUp(index string) error {
 	}
 	deployment, err = p.clientset.AppsV1().Deployments(namespace).Create(deployment)
 	if err != nil {
+		fmt.Printf("deployment create")
 		return err
 	}
 	serviceSpec, err = p.clientset.CoreV1().Services(namespace).Create(serviceSpec)
 	if err != nil {
+		fmt.Printf("service create")
 		return err
 	}
 	// create service
 	mysqlserviceSpec,err = p.clientset.CoreV1().Services(namespace).Create(mysqlserviceSpec)
 	if err != nil {
+		fmt.Printf("mysql service create")
 		return err
 	}
 	statefulSpec, err = p.clientset.AppsV1().StatefulSets(namespace).Create(statefulSpec)
 	if err != nil {
+		fmt.Printf("statefulset create")
 		return err
 	}
 	// create service
