@@ -110,7 +110,7 @@ func (p *Proxy) ScaleUp(index string) error {
 	deployment.Spec.Template.Spec.Containers[0].VolumeMounts = []corev1.VolumeMount{
 		corev1.VolumeMount{
 			Name: configMapName,
-			MountPath: "/go/src/main/config",
+			MountPath: "/root/config",
 		},
 	}
 	deployment.Spec.Template.Spec.Containers[0].Image = "ty0207/link-server:v"+ version 
